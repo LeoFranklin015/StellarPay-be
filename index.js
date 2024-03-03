@@ -4,6 +4,7 @@ import { MongoClient } from "mongodb";
 import cors from "cors";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -46,7 +47,21 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid password" });
     }
 
-    res.json({ message: "Login successful" });
+    // Decrypt the private key using the user's password
+    const decipher = crypto.createDecipher("aes-256-cbc", password);
+    let decryptedPrivateAddress = decipher.update(
+      user.encryptedPrivateAddress,
+      "hex",
+      "utf8"
+    );
+    decryptedPrivateAddress += decipher.final("utf8");
+
+    // Return public address and decrypted private address upon successful login
+    res.json({
+      message: "Login successful",
+      publicAddress: user.publicAddress,
+      privateAddress: decryptedPrivateAddress,
+    });
   } catch (error) {
     console.error("Error logging in:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -64,16 +79,17 @@ app.post("/register", async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // Hash the password and private address
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const hashedPrivateAddress = await bcrypt.hash(privateAddress, 10);
+    // Encrypt the private key using the user's password
+    const cipher = crypto.createCipher("aes-256-cbc", password);
+    let encryptedPrivateAddress = cipher.update(privateAddress, "utf8", "hex");
+    encryptedPrivateAddress += cipher.final("hex");
 
     // Insert user data into the database
     await db.collection("users").insertOne({
       username,
-      hashedPassword,
+      hashedPassword: await bcrypt.hash(password, 10),
       publicAddress,
-      hashedPrivateAddress,
+      encryptedPrivateAddress,
     });
 
     res.json({ message: "User registered successfully" });
